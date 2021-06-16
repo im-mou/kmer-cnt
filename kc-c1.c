@@ -9,6 +9,12 @@ KSEQ_INIT(gzFile, gzread)
 #include "khashl.h" // hash table
 KHASHL_MAP_INIT(, kc_c1_t, kc_c1, uint64_t, uint32_t, kh_hash_uint64, kh_eq_generic)
 
+typedef struct __ReadSeqList {
+	char* sequence;
+	unsigned length;
+	struct __ReadSeqList* next;
+} ReadSeqList;
+
 const unsigned char seq_nt4_table[256] = { // translate ACGT to 0123
 	0, 1, 2, 3,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
 	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
@@ -53,11 +59,42 @@ static kc_c1_t *count_file(const char *fn, int k)
 	gzFile fp;
 	kseq_t *ks;
 	kc_c1_t *h;
+
 	if ((fp = gzopen(fn, "r")) == 0) return 0;
-	ks = kseq_init(fp);
-	h = kc_c1_init();
-	while (kseq_read(ks) >= 0)
-		count_seq(h, k, ks->seq.l, ks->seq.s);
+	ks = kseq_init(fp); // descriptor fichero fastaq
+	h = kc_c1_init(); // hashtable
+
+	ReadSeqList *current, *head;
+	head = current = NULL;
+
+	// leer los datos del fichero de entrada y guardarlos en memoria
+	while (kseq_read(ks) >= 0) {
+
+		ReadSeqList *node = malloc(sizeof(ReadSeqList));
+        node->sequence = malloc(strlen(ks->seq.s) + 1);
+        strcpy(node->sequence, ks->seq.s);
+        node->length = ks->seq.l;
+        node->next =NULL;
+
+        if(head == NULL){
+            current = head = node;
+        } else {
+            current = current->next = node;
+        }
+
+	}
+
+	// contar
+	for(current = head; current; current=current->next){
+        count_seq(h, k, current->length, current->sequence);
+    }
+
+	// limpieza
+	for(current = head; current; current=current->next){
+        free(current->sequence);
+        free(current);
+    }
+
 	kseq_destroy(ks);
 	gzclose(fp);
 	return h;
