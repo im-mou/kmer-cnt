@@ -1,9 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <zlib.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "ketopt.h" // command-line argument parser
 
 #include "kseq.h" // FASTA/Q parser
@@ -53,12 +50,6 @@ typedef struct {
 	kc_c2_t **h;
 } kc_c2x_t;
 
-typedef struct __ReadSeqList {
-	char* sequence;
-	unsigned length;
-	struct __ReadSeqList* next;
-} ReadSeqList;
-
 static kc_c2x_t *c2x_init(int p)
 {
 	int i;
@@ -105,40 +96,8 @@ static kc_c2x_t *count_file(const char *fn, int k, int p)
 	if ((fp = gzopen(fn, "r")) == 0) return 0;
 	ks = kseq_init(fp);
 	h = c2x_init(p);
-
-	ReadSeqList *current, *head;
-	head = current = NULL;
-
-	// leer los datos del fichero de entrada y guardarlos en memoria
-	while (kseq_read(ks) >= 0) {
-
-		ReadSeqList *node = malloc(sizeof(ReadSeqList));
-        node->sequence = malloc(strlen(ks->seq.s) + 1);
-        strcpy(node->sequence, ks->seq.s);
-        node->length = ks->seq.l;
-        node->next =NULL;
-
-        if(head == NULL){
-            current = head = node;
-        } else {
-            current = current->next = node;
-        }
-
-	}
-
-	for(current = head; current; current=current->next){
-        printf("%u", current->length);
-    }
-
-	// free
-	for(current = head; current; current=current->next){
-        free(current->sequence);
-        free(current);
-    }
-
-	//count_seq(h, k, ks->seq.l, ks->seq.s);
-	// contar
-
+	while (kseq_read(ks) >= 0)
+		count_seq(h, k, ks->seq.l, ks->seq.s);
 	kseq_destroy(ks);
 	gzclose(fp);
 	return h;
