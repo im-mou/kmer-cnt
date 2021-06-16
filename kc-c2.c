@@ -59,6 +59,7 @@ typedef struct __ReadSeqList {
 	struct __ReadSeqList* next;
 } ReadSeqList;
 
+
 static kc_c2x_t *c2x_init(int p)
 {
 	int i;
@@ -91,6 +92,9 @@ static void count_seq(kc_c2x_t *h, int k, int len, char *seq) // insert k-mers i
 			x[1] = x[1] >> 2 | (uint64_t)(3 - c) << shift;  // reverse strand
 			if (++l >= k) { // we find a k-mer
 				uint64_t y = x[0] < x[1]? x[0] : x[1];
+                if(i % 25 == 0) {
+                    printf("%u\n", y);
+                }
 				c2x_insert(h, hash64(y, mask));
 			}
 		} else l = 0, x[0] = x[1] = 0; // if there is an "N", restart
@@ -102,8 +106,9 @@ static kc_c2x_t *count_file(const char *fn, int k, int p)
 	gzFile fp;
 	kseq_t *ks;
 	kc_c2x_t *h;
+
 	if ((fp = gzopen(fn, "r")) == 0) return 0;
-	ks = kseq_init(fp);
+	ks = kseq_init(fp); // descriptor fastaq file
 	h = c2x_init(p);
 
 	ReadSeqList *current, *head;
@@ -125,19 +130,18 @@ static kc_c2x_t *count_file(const char *fn, int k, int p)
         }
 
 	}
-
+    
+    // contar
 	for(current = head; current; current=current->next){
-        printf("%u", current->length);
+        count_seq(h, k, current->length, current->sequence);
     }
+
 
 	// free
 	for(current = head; current; current=current->next){
         free(current->sequence);
         free(current);
     }
-
-	//count_seq(h, k, ks->seq.l, ks->seq.s);
-	// contar
 
 	kseq_destroy(ks);
 	gzclose(fp);
@@ -180,6 +184,7 @@ int main(int argc, char *argv[])
 	print_hist(h);
 	for (i = 0; i < 1<<p; ++i)
 		kc_c2_destroy(h->h[i]);
-	free(h->h); free(h);
-	return 0;
+    free(h->h); free(h);
+    return 0;
 }
+
