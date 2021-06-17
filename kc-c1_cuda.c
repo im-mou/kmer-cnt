@@ -79,8 +79,8 @@ static uint32_t h2b(uint32_t hash, uint32_t bits) {
 HashTable *HashTable_init(int bits){
 	HashTable *ht;
 	CALLOC(ht, 1);
-	ht->keys = malloc(1U<<bits * sizeof(struct __KeyValue));
-	CALLOC(ht->used, 1U<<bits);
+	ht->keys = malloc((int)(1U<<bits) * sizeof(struct __KeyValue));
+	CALLOC(ht->used, (int)(1U<<bits));
 	ht->bits = (uint32_t)bits;
 	ht->count = 0;
 
@@ -89,7 +89,8 @@ HashTable *HashTable_init(int bits){
 
 void HashTable_destory(HashTable *ht) {
 	if (!ht) return;
-	free((void *)ht->keys); free(ht->used);
+	free((void *)ht->keys);
+	free(ht->used);
 	free(ht);
 }
 
