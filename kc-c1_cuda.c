@@ -88,7 +88,7 @@ void HashTable_destory(HashTable *ht) {
 	free(ht);
 }
 
-unsigned int hash_insert(HashTable *ht, const uint64_t *key, int *absent) {
+unsigned int hash_insert(HashTable *ht, uint64_t *key, int *absent) {
 
 	unsigned int n_buckets, i, last, mask;
 	n_buckets = ht->keys ? 1U << ht->bits : 0U;
@@ -150,26 +150,26 @@ static void count_seq_kmers(HashTable *ht, int k, int len, char *seq) // insert 
 }
 
 // ignore
-static void count_seq(kc_c1_t *h, int k, int len, char *seq) // insert k-mers in $seq to hash table $h
-{
-	int i, l;
-	uint64_t x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
-	for (i = l = 0, x[0] = x[1] = 0; i < len; ++i) {
-		int absent, c = seq_nt4_table[(uint8_t)seq[i]];
-		if (c < 4) { // not an "N" base
-			x[0] = (x[0] << 2 | c) & mask;                  // forward strand
-			x[1] = x[1] >> 2 | (uint64_t)(3 - c) << shift;  // reverse strand
-			if (++l >= k) { // we find a k-mer
-				khint_t itr;
-				uint64_t key = x[0] < x[1]? x[0] : x[1];
+// static void count_seq(kc_c1_t *h, int k, int len, char *seq) // insert k-mers in $seq to hash table $h
+// {
+// 	int i, l;
+// 	uint64_t x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
+// 	for (i = l = 0, x[0] = x[1] = 0; i < len; ++i) {
+// 		int absent, c = seq_nt4_table[(uint8_t)seq[i]];
+// 		if (c < 4) { // not an "N" base
+// 			x[0] = (x[0] << 2 | c) & mask;                  // forward strand
+// 			x[1] = x[1] >> 2 | (uint64_t)(3 - c) << shift;  // reverse strand
+// 			if (++l >= k) { // we find a k-mer
+// 				khint_t itr;
+// 				uint64_t key = x[0] < x[1]? x[0] : x[1];
 
-				itr = kc_c1_put(h, key, &absent); // only add one strand!
-				if (absent) kh_val(h, itr) = 0;
-				++kh_val(h, itr);
-			}
-		} else l = 0, x[0] = x[1] = 0; // if there is an "N", restart
-	}
-}
+// 				itr = kc_c1_put(h, key, &absent); // only add one strand!
+// 				if (absent) kh_val(h, itr) = 0;
+// 				++kh_val(h, itr);
+// 			}
+// 		} else l = 0, x[0] = x[1] = 0; // if there is an "N", restart
+// 	}
+// }
 
 static HashTable *count_file(const char *fn, int k)
 {
