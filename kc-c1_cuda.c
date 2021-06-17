@@ -76,9 +76,14 @@ static uint32_t h2b(uint32_t hash, uint32_t bits) {
 	return hash * 2654435769U >> (32 - bits);
 }
 
-HashTable *HashTable_init(){
+HashTable *HashTable_init(int bits){
 	HashTable *ht;
 	CALLOC(ht, 1);
+	ht->keys = malloc(1U<<bits * sizeof(struct __KeyValue));
+	CALLOC(ht->used, 1U<<bits);
+	ht->bits = (uint32_t)bits;
+	ht->count = 0;
+
 	return ht;
 }
 
@@ -137,7 +142,7 @@ static void count_seq_kmers(HashTable *ht, int k, int len, char *seq) // insert 
 				uint64_t key = x[0] < x[1]? x[0] : x[1];
 
 				//itr = kc_c1_put(h, key, &absent);
-				itr = hash_insert(ht, key, &absent);// only add one strand!
+				itr = hash_insert(ht, &key, &absent);// only add one strand!
 				if (absent) {
 					ht->keys[itr].val = 0;
 				}
@@ -180,7 +185,7 @@ static HashTable *count_file(const char *fn, int k)
 	if ((fp = gzopen(fn, "r")) == 0) return 0;
 	ks = kseq_init(fp); // descriptor fichero fastaq
 	// ht = kc_c1_init(); // inicializar hashtable
-	ht = HashTable_init(); // inicializar hashtable
+	ht = HashTable_init(k); // inicializar hashtable
 
 	ReadSeqList *current, *head;
 	head = current = NULL;
