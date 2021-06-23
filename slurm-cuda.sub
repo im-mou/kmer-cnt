@@ -1,0 +1,38 @@
+#!/bin/bash 
+
+echo "Running on: `/bin/hostname`" 
+module add gcc/10.2.0
+perf stat ./kc-cuda -k 31 ../dataset/M_abscessus_HiSeq_10M.fa.gz
+#!/bin/bash
+
+#SBATCH --job-name=FGPU
+#SBATCH -N 1 # number of nodes
+#SBATCH --partition=cuda.q
+#SBATCH --exclusive
+#SBATCH -w aolin24
+#SBATCH --output=exe-base.txt
+#SBATCH --gres=gpu:1
+
+# No cal configurar el nombre de cores, per defecte la aplicacio s'executara en un core n=1
+# #SBATCH -n 1 # number of cores
+
+# Si voleu una GPU concreta
+# #SBATCH --gres=gpu:GeForceGTX1080:1
+
+# Si voleu informacio sobre la GPU que fareu servir
+# /usr/local/cuda-9.0/samples/1_Utilities/deviceQuery/deviceQuery
+rm ./cuda.out
+
+echo -e "\nCarregant moduls\n"
+source /soft/modules-3.2.10/Modules/3.2.10/init/bash
+module load cuda/9.0
+
+# No podeu tenir carregat gcc/8.2.0, no es compatible amb la versió 9.0 de CUDA
+# si teniu gcc/8.2.0 carregat d'abans, cal eliminar-lo
+# module unload gcc/8.2.0
+
+echo -e "\nCompilant\n"
+nvcc -O3 --ptxas-options=-O3 -o cuda.out cuda.cu
+
+echo -e "\nExecutant\n"
+nvprof ./cuda.out -k 31 ../dataset/M_abscessus_HiSeq_10M.fa.gz
