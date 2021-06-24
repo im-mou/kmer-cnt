@@ -13,12 +13,12 @@
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 
-extern "C"
-{
-	#include "common.h"
-	#include "kseq.h" // FASTA/Q parser
-	#include "ketopt.h" // command-line argument parser
-}
+#include "kseq.h" // FASTA/Q parser
+//extern "C"
+//{
+	//#include "kseq.h" // FASTA/Q parser
+	//#include "ketopt.h" // command-line argument parser
+//}
 
 KSEQ_INIT(gzFile, gzread)
 
@@ -35,7 +35,7 @@ typedef struct __ReadSeqList {
 typedef struct HashTable {
 	uint32_t bits;
 	uint32_t count;
-	uint32_t *collition;
+	//uint32_t *collition;
 	uint64_t *keys;
     uint32_t *values;
 } HashTable;
@@ -75,7 +75,7 @@ __device__ uint32_t hash_uint64(uint64_t key) {
 	return (uint32_t)key;
 }
 
-HashTable *HashTable_init(HashTable *ht, uint32_t bits){
+void HashTable_init(HashTable *ht, uint32_t bits){
 	uint32_t capacity = 1U << bits;
 	ht->bits = capacity;
 	ht->count = 0;
@@ -103,9 +103,9 @@ __device__ void hash_insert(HashTable *ht, uint64_t kmer) {
 
 		if (prev == NULL || prev == kmer) {
 			ht->keys[iKey] = kmer;
-			atomicAdd(&ht.values[iKey], 1);
+			atomicAdd(&(ht->values[iKey]), 1);
 
-			if(prev == NULL) atomicAdd(&ht.count, 1);
+			if(prev == NULL) atomicAdd(&(ht->count), 1);
 
 			return;
 		}
@@ -123,17 +123,14 @@ __device__ void hash_insert(HashTable *ht, uint64_t kmer) {
 }
 
 // insert k-mers in $seq to hash table $ht
-__global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads)
+__global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads, uint32_t read_count)
 {
+	if(threadIdx.x < read_count) {
 
-	int i, l;
-	uint64_t x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
-	int len, char *seq;
-
-	if(threadIdx.x < NUMHID) {
-
-		seq = d_reads[threadIdx.x];
-		len = strlen(seq);
+        int i, l;
+		char *seq = d_reads[threadIdx.x];
+		int len = strlen(seq);
+        uint64_t x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
 
 		for (i = l = 0, x[0] = x[1] = 0; i < len; ++i) {
 			int c = seq_nt4_table[(uint8_t)seq[i]];
@@ -159,8 +156,8 @@ __global__ void kernel_print_hist(const HashTable *ht, uint64_t *cnt_d)
 
 	if(threadIdx.x < 256) {
 		if (ht->values[tid] != 0) {
-			pos = ht->values[tid] < 256 ? ht->values[tid] : 255);
-			atomicAdd(&cnt[pos], 1);
+			pos = ht->values[tid] < 256 ? ht->values[tid] : 255;
+			atomicAdd(&cnt_d[pos], (uint64_t)1);
 		}
 	}
 }
@@ -183,8 +180,8 @@ static void count_file(const char *fn, int k, uint32_t p)
 	while (kseq_read(ks) >= 0) {
         read_count++;
 
-		ReadSeqList *node = malloc(sizeof(ReadSeqList));
-        node->sequence = malloc(strlen(ks->seq.s) + 1);
+		ReadSeqList *node = (ReadSeqList*)malloc(sizeof(ReadSeqList));
+        node->sequence = (char*)malloc(strlen(ks->seq.s) + 1);
         strcpy(node->sequence, ks->seq.s);
         node->length = ks->seq.l;
         node->next =NULL;
@@ -223,16 +220,18 @@ static void count_file(const char *fn, int k, uint32_t p)
 	// allocate memory in device
 	cudaMalloc((void **)&d_reads, read_count * sizeof(char *));
 	cudaMalloc((void **)&ht_d, sizeof(HashTable));
-	cudaMalloc((void **)&ht_d.keys, capacity * sizeof(uint64_t));
-	cudaMalloc((void **)&ht_d.values, capacity * sizeof(uint32_t));
-	cudaMalloc((void **)&ht_d.collition, capacity * sizeof(uint32_t));
+	cudaMalloc((void **)ht_d->keys, capacity * sizeof(uint64_t));
+	cudaMalloc((void **)ht_d->values, capacity * sizeof(uint32_t));
+	//cudaMalloc((void **)ht_d->collition, capacity * sizeof(uint32_t));
 	cudaMalloc((void **)&cnt_d, 256 * sizeof(uint64_t));
 
+	cudaMemset(ht_d->keys, 0, capacity * sizeof(uint64_t));
+	cudaMemset(ht_d->values, 0, capacity * sizeof(uint32_t));
 	cudaMemset(cnt_d, 0, 256 * sizeof(uint64_t));
 
 	// copy data to device
 	cudaMemcpy(ht_d, ht, sizeof(HashTable), cudaMemcpyHostToDevice);
-	cudaMemcpyToSymbol(d_capacity, capacity, sizeof(uint32_t));
+	cudaMemcpyToSymbol(&d_capacity, capacity, sizeof(uint32_t));
 
 
 
@@ -256,7 +255,7 @@ static void count_file(const char *fn, int k, uint32_t p)
 
 
 
-	kernel_count_seq_kmers<<<ceil(read_count/1024), 1024>>>(ht_d, k, d_reads);
+	kernel_count_seq_kmers<<<ceil(read_count/1024), 1024>>>(ht_d, k, d_reads, read_count);
 
 	kernel_print_hist<<<ceil(ht_d->count/256), 256>>>(ht_d, cnt_d);
 
@@ -298,16 +297,19 @@ static void count_file(const char *fn, int k, uint32_t p)
 int main(int argc, char *argv[])
 {
 	HashTable *ht;
-	int c, k = 15;
+	int c, k = 31;
     uint32_t p = 27;
+    /*
 	ketopt_t o = KETOPT_INIT;
 	while ((c = ketopt(&o, argc, argv, 1, "k:", 0)) >= 0)
 		if (c == 'k') k = atoi(o.arg);
 	if (argc - o.ind < 1) {
 		fprintf(stderr, "Usage: kc-c1 [-k %d] <in.fa>\n", k);
 		return 1;
-	}
-	count_file(argv[o.ind], k, p);
+	}*/
+
+	//count_file(argv[o.ind], k, p);
+	count_file("../dataset/M_abscessus_HiSeq_10M.fa.gz", k, p);
 
 	return 0;
 }
