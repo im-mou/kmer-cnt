@@ -34,11 +34,11 @@ typedef struct __ReadSeqList {
 } ReadSeqList;
 
 typedef struct HashTable {
-	uint32_t bits;
-	uint32_t count;
-	//uint32_t *collition;
-	uint64_t *keys;
-    uint32_t *values;
+	uint32_c bits;
+	uint32_c count;
+	//uint32_c *collition;
+	uint64_c *keys;
+    uint32_c *values;
 } HashTable;
 
 
@@ -64,7 +64,7 @@ const unsigned char seq_nt4_table[256] = { // translate ACGT to 0123
 
 
 // funcion para calcular un hash de 64 bits
-__device__ uint32_t hash_uint64(uint64_t key) {
+__device__ uint32_c hash_uint64(uint64_c key) {
 
 	key = ~key + (key << 21);
 	key = key ^ key >> 24;
@@ -73,14 +73,14 @@ __device__ uint32_t hash_uint64(uint64_t key) {
 	key = (key + (key << 2)) + (key << 4);
 	key = key ^ key >> 28;
 	key = key + (key << 31);
-	return (uint32_t)key;
+	return (uint32_c)key;
 }
 
-HashTable* HashTable_init(uint32_t bits){
+HashTable* HashTable_init(uint32_c bits){
     HashTable *ht;
     ht = (HashTable*)calloc(1, sizeof(HashTable));
 
-	uint32_t capacity = 1U << bits;
+	uint32_c capacity = 1U << bits;
 	ht->bits = capacity;
 	ht->count = 0;
 
@@ -96,7 +96,7 @@ void HashTable_destory(HashTable *ht) {
 }
 
 
-__device__ void hash_insert(HashTable *ht, uint64_t kmer, uint32_t capacity_d) {
+__device__ void hash_insert(HashTable *ht, uint64_c kmer, uint32_c capacity_d) {
 
 	unsigned int iKey, last;
 	bool end = false;
@@ -105,7 +105,7 @@ __device__ void hash_insert(HashTable *ht, uint64_t kmer, uint32_t capacity_d) {
 
 	while (true)
 	{
-		uint32_t prev = atomicCAS(ht->keys[iKey], NULL, iKey);
+		uint32_c prev = atomicCAS(ht->keys[iKey], NULL, iKey);
 
 		if (prev == NULL || prev == kmer) {
 			ht->keys[iKey] = kmer;
@@ -129,23 +129,23 @@ __device__ void hash_insert(HashTable *ht, uint64_t kmer, uint32_t capacity_d) {
 }
 
 // insert k-mers in $seq to hash table $ht
-__global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads, uint32_t read_count)
+__global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads, uint32_c read_count)
 {
 	if(threadIdx.x < read_count) {
 
         int i, l;
 		char *seq = d_reads[threadIdx.x];
 		int len = strlen(seq);
-        uint64_t x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
+        uint64_c x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
 
 		for (i = l = 0, x[0] = x[1] = 0; i < len; ++i) {
-			int c = seq_nt4_table[(uint8_t)seq[i]];
+			int c = seq_nt4_table[(uint8_c)seq[i]];
 			if (c < 4) { // not an "N" base
 				x[0] = (x[0] << 2 | c) & mask;                  // forward strand
-				x[1] = x[1] >> 2 | (uint64_t)(3 - c) << shift;  // reverse strand
+				x[1] = x[1] >> 2 | (uint64_c)(3 - c) << shift;  // reverse strand
 				if (++l >= k) { // we find a k-mer
 
-					uint64_t kmer = x[0] < x[1]? x[0] : x[1];
+					uint64_c kmer = x[0] < x[1]? x[0] : x[1];
 					hash_insert(ht, kmer); // only add one strand!
 
 				}
@@ -154,7 +154,7 @@ __global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads, uin
 	}
 }
 
-__global__ void kernel_print_hist(const HashTable *ht, uint32_t *cnt_d)
+__global__ void kernel_print_hist(const HashTable *ht, uint32_c *cnt_d)
 {
 	unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned pos;
@@ -163,18 +163,18 @@ __global__ void kernel_print_hist(const HashTable *ht, uint32_t *cnt_d)
 	if(threadIdx.x < 256) {
 		if (ht->values[tid] != 0) {
 			pos = ht->values[tid] < 256 ? ht->values[tid] : 255;
-			atomicAdd(&cnt_d[pos], (uint32_t)1);
+			atomicAdd(&cnt_d[pos], (uint32_c)1);
 		}
 	}
 }
 
-static void count_file(const char *fn, int k, uint32_t p)
+static void count_file(const char *fn, int k, uint32_c p)
 {
 	gzFile fp;
 	kseq_t *ks;
 	HashTable *ht;
-	uint32_t capacity = 1U << p;
-    uint32_t cnt[256];	
+	uint32_c capacity = 1U << p;
+    uint32_c cnt[256];
 
     // inicializar hashtable
 	ht = HashTable_init(p);
@@ -182,9 +182,9 @@ static void count_file(const char *fn, int k, uint32_t p)
     // variables para cuda
 	HashTable *ht_d;
 	char **reads_d;
-	uint32_t *cnt_d;
-	uint32_t *capacity_d;
-	uint32_t *read_count_d;
+	uint32_c *cnt_d;
+	uint32_c *capacity_d;
+	uint32_c *read_count_d;
 
 
 
@@ -197,7 +197,7 @@ static void count_file(const char *fn, int k, uint32_t p)
 	head = current = NULL;
 
 	// leer los datos del fichero de entrada y guardarlos en memoria
-    uint32_t read_count = 0;
+    uint32_c read_count = 0;
 	while (kseq_read(ks) >= 0) {
         read_count++;
 
@@ -223,27 +223,27 @@ static void count_file(const char *fn, int k, uint32_t p)
 
 
 
-	
+
 
 
 	// allocate memory in device
 	cudaMalloc((void **)&reads_d, read_count * sizeof(char *));
 	cudaMalloc((void **)&ht_d, sizeof(HashTable));
-	cudaMalloc((void **)ht_d->keys, capacity * sizeof(uint64_t));
-	cudaMalloc((void **)ht_d->values, capacity * sizeof(uint32_t));
-	//cudaMalloc((void **)ht_d->collition, capacity * sizeof(uint32_t));
-	cudaMalloc((void **)&cnt_d, 256 * sizeof(uint32_t));
-	cudaMalloc((void **)&capacity_d, sizeof(uint32_t));
-	cudaMalloc((void **)&read_count_d, sizeof(uint32_t));
+	cudaMalloc((void **)ht_d->keys, capacity * sizeof(uint64_c));
+	cudaMalloc((void **)ht_d->values, capacity * sizeof(uint32_c));
+	//cudaMalloc((void **)ht_d->collition, capacity * sizeof(uint32_c));
+	cudaMalloc((void **)&cnt_d, 256 * sizeof(uint32_c));
+	cudaMalloc((void **)&capacity_d, sizeof(uint32_c));
+	cudaMalloc((void **)&read_count_d, sizeof(uint32_c));
 
-	cudaMemset(ht_d->keys, 0, capacity * sizeof(uint64_t));
-	cudaMemset(ht_d->values, 0, capacity * sizeof(uint32_t));
-	cudaMemset(cnt_d, 0, 256 * sizeof(uint32_t));
+	cudaMemset(ht_d->keys, 0, capacity * sizeof(uint64_c));
+	cudaMemset(ht_d->values, 0, capacity * sizeof(uint32_c));
+	cudaMemset(cnt_d, 0, 256 * sizeof(uint32_c));
 
 	// copy data to device
 	cudaMemcpy(ht_d, ht, sizeof(HashTable), cudaMemcpyHostToDevice);
-	cudaMemcpy(capacity_d, capacity, sizeof(uint32_t), cudaMemcpyHostToDevice);
-	cudaMemcpy(read_count_d, read_count, sizeof(uint32_t), cudaMemcpyHostToDevice);
+	cudaMemcpy(capacity_d, capacity, sizeof(uint32_c), cudaMemcpyHostToDevice);
+	cudaMemcpy(read_count_d, read_count, sizeof(uint32_c), cudaMemcpyHostToDevice);
 
 
 
@@ -276,9 +276,9 @@ static void count_file(const char *fn, int k, uint32_t p)
 
 
 	cudaMemcpy(ht, ht_d, sizeof(HashTable), cudaMemcpyDeviceToHost);
-	cudaMemcpy(ht->keys, ht_d->keys, capacity * sizeof(uint64_t), cudaMemcpyDeviceToHost);
-	cudaMemcpy(ht->values, ht_d->values, capacity * sizeof(uint32_t), cudaMemcpyDeviceToHost);
-	cudaMemcpy(cnt, cnt_d, capacity * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+	cudaMemcpy(ht->keys, ht_d->keys, capacity * sizeof(uint64_c), cudaMemcpyDeviceToHost);
+	cudaMemcpy(ht->values, ht_d->values, capacity * sizeof(uint32_c), cudaMemcpyDeviceToHost);
+	cudaMemcpy(cnt, cnt_d, capacity * sizeof(uint32_c), cudaMemcpyDeviceToHost);
 
 
     printf("COUNT: %d\n\n", ht->count);
@@ -311,8 +311,8 @@ static void count_file(const char *fn, int k, uint32_t p)
 int main(int argc, char *argv[])
 {
 	int c, k = 31;
-    uint32_t p = 27;
-    
+    uint32_c p = 27;
+
 	ketopt_t o = KETOPT_INIT;
 	while ((c = ketopt(&o, argc, argv, 1, "k:", 0)) >= 0)
 		if (c == 'k') k = atoi(o.arg);
