@@ -221,7 +221,7 @@ static HashTable *count_file(const char *fn, int k, uint32_t p)
     printf("total reads: %d\n", read_count);
 
     current = head;
-    for(i = 0; i<read_count ; i++){
+    for(i = 0; i<500000 ; i++){
 		count_seq_kmers(ht, k, strlen(reads[i]), reads[i]);
     } 
 

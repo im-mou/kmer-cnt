@@ -1,17 +1,11 @@
-#!/bin/bash 
-
-echo "Running on: `/bin/hostname`" 
-module add gcc/10.2.0
-perf stat ./kc-cuda -k 31 ../dataset/M_abscessus_HiSeq_10M.fa.gz
-#!/bin/bash
+#!/bin/bash -l
 
 #SBATCH --job-name=FGPU
-#SBATCH -N 1 # number of nodes
+#SBATCH -N 1
 #SBATCH --partition=cuda.q
-#SBATCH --exclusive
 #SBATCH -w aolin24
+#SBATCH --exclusive
 #SBATCH --output=exe-base.txt
-#SBATCH --gres=gpu:1
 
 # No cal configurar el nombre de cores, per defecte la aplicacio s'executara en un core n=1
 # #SBATCH -n 1 # number of cores
@@ -23,16 +17,26 @@ perf stat ./kc-cuda -k 31 ../dataset/M_abscessus_HiSeq_10M.fa.gz
 # /usr/local/cuda-9.0/samples/1_Utilities/deviceQuery/deviceQuery
 rm ./cuda.out
 
-echo -e "\nCarregant moduls\n"
-source /soft/modules-3.2.10/Modules/3.2.10/init/bash
-module load cuda/9.0
+#echo -e "\nCarregant moduls\n"
+#source /soft/modules-4.6.1/modulefiles/compilers/cuda
+#source /soft/modules-3.2.10/Modules/3.2.10/init/bash
+
+# next variable indicates GPU device number 
+export CUDA_VISIBLE_DEVICES=0
+
+# install CUDA profiling utilities
+module add cuda/11.2
+module add nvidia-hpc-sdk/21.2
 
 # No podeu tenir carregat gcc/8.2.0, no es compatible amb la versió 9.0 de CUDA
 # si teniu gcc/8.2.0 carregat d'abans, cal eliminar-lo
 # module unload gcc/8.2.0
 
 echo -e "\nCompilant\n"
-nvcc -O3 --ptxas-options=-O3 -o cuda.out cuda.cu
+#nvcc -O3 --ptxas-options=-O3 -o cuda.out cuda.cu
+nvcc -O3 --ptxas-options=-O3 -o cuda.out cuda-v2.cu
 
 echo -e "\nExecutant\n"
-nvprof ./cuda.out -k 31 ../dataset/M_abscessus_HiSeq_10M.fa.gz
+# nsys nvprof ./cuda.out 31 ../dataset/M_abscessus_HiSeq_10M.fa.gz
+nsys nvprof ./cuda.out 15 26 parsed_data2.txt
+#nsys nvprof ./cuda.out 31 27 parsed.txt

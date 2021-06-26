@@ -12,7 +12,7 @@
 
 typedef struct __ReadSeqList {
 	char* sequence;
-	unsigned int length;
+	unsigned length;
 	struct __ReadSeqList* next;
 } ReadSeqList;
 
@@ -77,35 +77,58 @@ void HashTable_destory(HashTable *ht) {
 }
 
 
-__device__ unsigned int h2b(unsigned int hash, unsigned int bits) {
+__device__ unsigned int h2b(unsigned int hash, unsigned long long int bits) {
     return hash * 2654435769U >> (32 - bits);
 }
 
 __device__ void hash_insert(HashTable *ht, unsigned long long int kmer) {
 
 	unsigned int iKey, last;
-	bool end = false;
+	//bool end = false;
 
+
+	//iKey = last = hash_uint64(kmer) * (2654435769U >> (32 - ht->bits));
     iKey = last = h2b(hash_uint64(kmer), ht->bits);
+    while (ht->values[iKey] > 0 && ht->keys[iKey] != kmer) {
+        iKey = (iKey + 1U) & ((1U << ht->bits) - 1);
+        if (iKey == last) break;
+    }
 
+    // Comprobar si se ha encontrado un slot vacío
+    if (ht->values[iKey] == 0) { // no se ha encontrado la llave
+
+        ht->keys[iKey] = kmer;
+        ht->values[iKey] = 1;
+        ++ht->count;
+
+    } else {
+        ht->values[iKey]++;
+    } 
+
+    /*
 	while (true)
 	{
-		unsigned long long int prev = atomicCAS(&(ht->keys[iKey]), 0ULL, kmer);
+		unsigned int prev = atomicCAS(ht->keys[iKey], NULL, iKey);
 
-		if (prev == 0ULL || prev == kmer) {
-			atomicAdd(&(ht->values[iKey]), 1U);
+		if (prev == NULL || prev == kmer) {
+			ht->keys[iKey] = kmer;
+			atomicAdd(&(ht->values[iKey]), 1);
+
+			if(prev == NULL) atomicAdd(&(ht->count), 1);
+
 			return;
 		}
 
 		if(end) return;
 
 		// Collition: Open addressing
-		iKey = (iKey + 1U) & ((1U << ht->bits) - 1);
+		iKey = (iKey + 1U) & (ht->bits - 1);
 
 		// loop back
 		end = (iKey == last);
 
 	}
+    */
 
 }
 
@@ -114,10 +137,10 @@ __global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads)
 {
 	unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	if(tid < ht->read_count) {
+
         int i, l;
 		char *seq = d_reads[tid];
-
-        //int len = strlen(seq);
+		//int len = strlen(seq);
 		int len = 100;
         unsigned long long int x[2], mask = (1ULL<<k*2) - 1, shift = (k - 1) * 2;
 
@@ -133,18 +156,20 @@ __global__ void kernel_count_seq_kmers(HashTable *ht, int k, char **d_reads)
 				}
 			} else l = 0, x[0] = x[1] = 0; // if there is an "N", restart
 		}
-    }
+	}
 }
 
 __global__ void kernel_print_hist(const HashTable *ht, unsigned int *cnt_d)
 {
 	unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	unsigned int pos;
+	unsigned pos;
 
-	if(tid < (1U << ht->bits)) {
-		if (ht->values[tid] > 0) {
-			pos = ht->values[tid] < 256U ? ht->values[tid] : 255;
-			atomicAdd(&(cnt_d[pos]), 1U);
+
+	if(threadIdx.x < ht->bits) {
+		if (ht->values[tid] != 0) {
+			pos = ht->values[tid] < 256 ? ht->values[tid] : 255;
+            cnt_d[pos]++;
+			//atomicAdd(&cnt_d[pos], (unsigned int)1);
 		}
 	}
 }
@@ -225,7 +250,7 @@ static int count_file(const char *fn, int k, unsigned int p)
    	cudaMalloc((void **)&keys_d, capacity * sizeof(unsigned long long int));
 	cudaMalloc((void **)&values_d, capacity * sizeof(unsigned int));
 	cudaMalloc((void **)&cnt_d, 256 * sizeof(unsigned int));
-   	cudaMemset(keys_d, 0ULL, capacity * sizeof(unsigned long long int));
+   	cudaMemset(keys_d, 0, capacity * sizeof(unsigned long long int));
 	cudaMemset(values_d, 0, capacity * sizeof(unsigned int));
 	cudaMemset(cnt_d, 0, 256 * sizeof(unsigned int));
 
@@ -256,14 +281,7 @@ static int count_file(const char *fn, int k, unsigned int p)
 
 
     // invocar kernels
-    unsigned int thr = 1024;
-
-
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start);
+    int thr = 1024;
 
 	//kernel_count_seq_kmers<<<1,1>>>(ht_d, k, reads_d);
 	kernel_count_seq_kmers<<<ceil(read_count/thr), thr>>>(ht_d, k, reads_d);
@@ -271,23 +289,14 @@ static int count_file(const char *fn, int k, unsigned int p)
     cudaDeviceSynchronize();
 
 
-	kernel_print_hist<<<ceil(capacity/thr), thr>>>(ht_d, cnt_d);
-	//kernel_print_hist<<<1,1>>>(ht_d, cnt_d);
+	//kernel_print_hist<<<ceil(capacity/thr), thr>>>(ht_d, cnt_d);
 
-    cudaDeviceSynchronize();
-    
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    float seconds = milliseconds / 1000.0f;
-    printf("GPU time: %fs\n", seconds);
+    //cudaDeviceSynchronize();
 
 	cudaMemcpy(ht, ht_d, sizeof(HashTable), cudaMemcpyDeviceToHost);
 	cudaMemcpy(ht->keys, keys_d, capacity * sizeof(unsigned long long int), cudaMemcpyDeviceToHost);
 	cudaMemcpy(ht->values, values_d, capacity * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-	cudaMemcpy(cnt, cnt_d, 256 * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(cnt, cnt_d, capacity * sizeof(unsigned int), cudaMemcpyDeviceToHost);
 
 
     printf("COUNT: %d\n\n", ht->count);
@@ -300,7 +309,7 @@ static int count_file(const char *fn, int k, unsigned int p)
     // }
 
 	for (i = 1; i < 256; ++i)
-		printf("%d\t%d\n", i, cnt[i]);
+		printf("%d\t%ld\n", i, (long)cnt[i]);
 
 
 	// limpieza
@@ -309,7 +318,7 @@ static int count_file(const char *fn, int k, unsigned int p)
 	cudaFree(cnt_d);
 	cudaFree(keys_d);
 	cudaFree(values_d);
-
+    return 0;
 	// limpieza
     i = 0;
 	for(current = head; current; current=current->next){
@@ -330,9 +339,17 @@ int main(int argc, char *argv[])
 	int k = 31;
     unsigned int p = 27;
 
+/*
+	ketopt_t o = KETOPT_INIT;
+	while ((c = ketopt(&o, argc, argv, 1, "k:", 0)) >= 0)
+		if (c == 'k') k = atoi(o.arg);
+	if (argc - o.ind < 1) {
+		fprintf(stderr, "Usage: kc-c1 [-k %d] <in.fa>\n", k);
+		return 1;
+	}
+*/
     k = (int)strtol(argv[1], NULL, 10);
-    p = (unsigned int)strtol(argv[2], NULL, 10);
-	count_file(argv[3], k, p);
+	count_file(argv[2], k, p);
 
 	return 0;
 }
